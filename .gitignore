@@ -1,0 +1,8 @@
+# Local data: logs, personal configuration (devices, portal token), recordings
+logs/
+config/
+recordings/
+# Build output (published as a GitHub Release asset instead)
+dist/
+__pycache__/
+*.pyc

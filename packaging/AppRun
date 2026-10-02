@@ -1,0 +1,39 @@
+#!/bin/sh
+# TikTok LIVE Native AppImage entry point. Bundled userland from Ubuntu 24.04; glibc, GPU, PipeWire, fonts from the host.
+HERE="$(dirname "$(readlink -f "$0")")"
+U="$HERE/usr"; L="$U/lib/x86_64-linux-gnu"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/tiktok-live-native"; mkdir -p "$CACHE"
+
+# Writable data (logs, config, recordings) lives outside the read-only image.
+export TTLN_DATA_DIR="${TTLN_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/tiktok-live-native}"
+
+export LD_LIBRARY_PATH="$L${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PATH="$U/bin:$PATH"
+export PYTHONHOME="$U" PYTHONPATH="$U/lib/python3/dist-packages" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+export GI_TYPELIB_PATH="$L/girepository-1.0"
+export GST_PLUGIN_SYSTEM_PATH_1_0="$L/gstreamer-1.0" GST_PLUGIN_PATH_1_0="" \
+       GST_PLUGIN_SCANNER_1_0="$L/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" GST_REGISTRY_1_0="$CACHE/gst-registry.bin"
+export GIO_MODULE_DIR="$L/gio/modules" GSETTINGS_SCHEMA_DIR="$U/share/glib-2.0/schemas"
+export GTK_EXE_PREFIX="$U" GTK_DATA_PREFIX="$U"  # don't load the host's GTK modules (other GTK version)
+export TTLN_HOST_XDG_DATA_DIRS="${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export XDG_DATA_DIRS="$U/share:$TTLN_HOST_XDG_DATA_DIRS"
+"$L/gdk-pixbuf-2.0/gdk-pixbuf-query-loaders" "$L"/gdk-pixbuf-2.0/2.10.0/loaders/*.so > "$CACHE/loaders.cache" 2>/dev/null
+export GDK_PIXBUF_MODULE_FILE="$CACHE/loaders.cache"
+
+# Python's requests: the distro's CA bundle (path differs between Debian/Arch, Fedora, openSUSE).
+for ca in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do
+  [ -r "$ca" ] && { export REQUESTS_CA_BUNDLE="$ca" SSL_CERT_FILE="$ca"; ln -sfn "$ca" "@CA_LINK@" 2>/dev/null; break; }
+done
+
+# WebKitGTK looks for its helper processes at a compiled-in path, patched to this same-length link.
+# ponytail: one fixed /tmp name, so two different users can't run it at the same time on one machine.
+ln -sfn "$L/webkitgtk-6.0" "@WK_LINK@" 2>/dev/null
+# bubblewrap can't expose /tmp/.mount_* libraries to the sandboxed web process; the view only loads tiktok.com.
+export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+
+APP="$U/share/tiktok-live-native"
+case "$1" in
+  --selftest) shift; exec "$U/bin/python3" "$APP/smoke.py" "$@" ;;
+  --av-test)  shift; exec "$U/bin/python3" "$APP/av_test.py" "$@" ;;
+esac
+exec "$U/bin/python3" "$APP/app.py" "$@"

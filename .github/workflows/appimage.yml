@@ -1,0 +1,29 @@
+# Builds the AppImage in a clean Ubuntu 24.04 container on every push; on a version tag (v*) publishes it as a Release.
+name: AppImage
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build AppImage (Docker, ubuntu:24.04)
+        run: packaging/build-appimage.sh
+      - name: Self-test on Ubuntu, Debian, Fedora, Arch, openSUSE
+        run: packaging/test-distros.sh 2>&1 | tee selftest.txt; ! grep -q "SELFTEST=FAIL" selftest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TikTok-LIVE-Native-x86_64.AppImage
+          path: dist/TikTok-LIVE-Native-x86_64.AppImage
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/TikTok-LIVE-Native-x86_64.AppImage
+          generate_release_notes: true

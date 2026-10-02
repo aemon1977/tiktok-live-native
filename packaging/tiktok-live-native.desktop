@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=TikTok LIVE Native
+Comment=Emite a TikTok LIVE desde Linux (pantalla, cámara, micrófono)
+Exec=AppRun
+Icon=tiktok-live-native
+Categories=AudioVideo;Video;
+Terminal=false
