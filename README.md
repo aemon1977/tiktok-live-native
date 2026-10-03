@@ -1,3 +1,5 @@
+<img src="packaging/icons/hicolor/128x128/apps/tiktok-live-native.png" alt="" width="96" align="right">
+
 # TikTok LIVE Native
 
 Aplicación nativa de Linux para emitir directamente a **TikTok LIVE**: pantalla o ventana, cámara, micrófono y audio
