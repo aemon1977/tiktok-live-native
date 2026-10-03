@@ -611,6 +611,9 @@ class Win:
         bye(); return False
 
 
+Gtk.Window.set_default_icon_name("tiktok-live-native")
+if (E.HERE / "packaging/icons").is_dir():  # running from source; the AppImage ships them in its hicolor theme
+    Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(str(E.HERE / "packaging/icons"))
 app = Adw.Application(application_id="io.github.tiktok_live_native")
 app.connect("activate", lambda a: Win(a))
 sys.exit(app.run(None))

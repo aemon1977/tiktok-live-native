@@ -130,6 +130,10 @@ apprun = (SRC / "packaging/AppRun").read_text().replace("@WK_LINK@", WK_LINK).re
     .replace("@OBS_DATA_LINK@", "/tmp/.ttln-obs").replace("@OBS_PLUG_LINK@", OBS_SUBST[b"/usr/lib/x86_64-linux-gnu/obs-plugins"].decode())
 (APPDIR / "AppRun").write_text(apprun); (APPDIR / "AppRun").chmod(0o755)
 copy(SRC / "packaging/tiktok-live-native.desktop", APPDIR / "tiktok-live-native.desktop")
-copy(SRC / "packaging/tiktok-live-native.svg", APPDIR / "tiktok-live-native.svg")
+# Icon: PNG at the root (appimagetool turns it into .DirIcon, what file managers / Gear Lever / AppImageLauncher show)
+# plus the full hicolor set for the desktop entry and the window. PNGs are pre-rendered (the build has no fonts).
+copy(SRC / "packaging/icons/hicolor/256x256/apps/tiktok-live-native.png", APPDIR / "tiktok-live-native.png")
+copytree(SRC / "packaging/icons/hicolor", U / "share/icons/hicolor")
+(U / "share/icons/hicolor/icon-theme.cache").unlink(missing_ok=True)  # Ubuntu's cache doesn't list our icon
 for p in APPDIR.rglob("*"):
     if p.is_file(): p.chmod(p.stat().st_mode | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
