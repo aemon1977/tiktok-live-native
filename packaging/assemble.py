@@ -53,6 +53,7 @@ copytree("/usr/lib/python3/dist-packages", U / "lib/python3/dist-packages", igno
 app = U / "share/tiktok-live-native"
 for f in ("app.py", "engine.py", "tiktok.py", "chat_overlay.py", "obs_launcher.py", "av_test.py", "selftest.py", "README.md"): copy(SRC / f, app / f)
 copy(SRC / "packaging/smoke.py", app / "smoke.py")
+copy(SRC / "packaging/appimage-icon.thumbnailer", app / "appimage-icon.thumbnailer")
 copy(Path(sh("which", "pactl").strip()), U / "bin/pactl")
 
 # ---- GObject data

@@ -13,7 +13,7 @@ gi.require_version("Gio", "2.0"); gi.require_version("Gst", "1.0")
 from gi.repository import Gio, GLib, Gst
 Gst.init(None)
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 HERE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("TTLN_DATA_DIR") or HERE)  # AppRun points this to ~/.local/share/tiktok-live-native
 LOGS = DATA / "logs"; CFG = DATA / "config"
@@ -40,6 +40,21 @@ def recordings_dir():
     """~/Vídeos/TikTok LIVE (XDG Videos dir, localized), visible to the user even when running from the AppImage."""
     videos = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_VIDEOS) or str(Path.home() / "Videos")
     d = Path(videos) / "TikTok LIVE"; d.mkdir(parents=True, exist_ok=True); return d
+
+
+def install_appimage_thumbnailer():
+    """File managers (GNOME Files, Nemo, Caja…) only show an AppImage's own icon with an AppImage thumbnailer, which
+    distros don't ship. Install a user-level one (reads .DirIcon with unsquashfs, never runs the AppImage) once."""
+    src = HERE / "appimage-icon.thumbnailer"
+    dst = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "thumbnailers/appimage-icon.thumbnailer"
+    if not src.exists() or (dst.exists() and dst.read_text() == src.read_text()): return False
+    dst.parent.mkdir(parents=True, exist_ok=True); dst.write_text(src.read_text())
+    appimage = os.environ.get("APPIMAGE")  # forget GNOME's cached "no thumbnail" for this file so it retries
+    if appimage:
+        import hashlib
+        md5 = hashlib.md5(Path(appimage).resolve().as_uri().encode()).hexdigest()
+        for p in (Path.home() / ".cache/thumbnails").glob(f"**/{md5}.png"): p.unlink(missing_ok=True)
+    return True
 
 
 def host_env():

@@ -65,6 +65,7 @@ class Win:
         self.win.connect("close-request", self.on_close)
         self.log = E.Log("app.log", fresh=False, echo=self.append_log)
         self.log(f"=== TikTok LIVE Native {E.VERSION} · inicio ===")
+        if os.environ.get("TTLN_APPDIR") and E.install_appimage_thumbnailer(): self.log("THUMBNAILER=INSTALLED")
         self.build()
         self.refresh_session(); self.sync_ui()
         if self.cfg["screen"] and E.ScreenPortal.TOKEN.exists(): self.pick_screen(forget=False)  # restores last choice, no dialog

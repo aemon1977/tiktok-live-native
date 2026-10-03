@@ -1,0 +1,4 @@
+[Thumbnailer Entry]
+TryExec=unsquashfs
+Exec=python3 -c "import sys,struct,subprocess,tempfile,os,shutil,os.path as P; a,o,s=sys.argv[1:4]; h=open(a,'rb').read(64); off=struct.unpack_from('<Q',h,40)[0]+struct.unpack_from('<H',h,58)[0]*struct.unpack_from('<H',h,60)[0]; d=tempfile.mkdtemp(); x=P.join(d,'x'); run=lambda n: subprocess.run(['unsquashfs','-q','-n','-o',str(off),'-d',x,'-f',a,n],capture_output=True); run('.DirIcon'); i=P.join(x,'.DirIcon'); t=os.readlink(i) if P.islink(i) else ''; t and run(t); i=P.join(x,t) if t else i; r=subprocess.run(['gdk-pixbuf-thumbnailer','-s',s,i,o]).returncode; shutil.rmtree(d,True); sys.exit(r)" %i %o %s
+MimeType=application/vnd.appimage;application/x-iso9660-appimage;
