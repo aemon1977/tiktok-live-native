@@ -28,7 +28,8 @@ def elements():
     from gi.repository import Gst
     Gst.init(None)
     need = ("pipewiresrc v4l2src pulsesrc videotestsrc audiotestsrc compositor videoconvertscale videorate audiomixer audioconvert "
-            "audioresample x264enc avenc_aac h264parse aacparse flvmux rtmp2sink matroskamux filesink tee queue appsink jpegdec").split()
+            "audioresample x264enc avenc_aac h264parse aacparse flvmux rtmp2sink matroskamux mp4mux level filesink tee queue appsink "
+            "jpegdec").split()
     missing = [e for e in need if not Gst.ElementFactory.find(e)]
     if missing: raise RuntimeError("faltan " + " ".join(missing))
     return f"{len(need)} elementos, GStreamer {Gst.version_string().split()[-1]}"

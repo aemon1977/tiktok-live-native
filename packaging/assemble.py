@@ -22,7 +22,7 @@ HOST = re.compile(r"^(ld-linux|libc\.|libm\.|libdl\.|libpthread|librt\.|libresol
 
 ELEMENTS = ("pipewiresrc v4l2src pulsesrc videotestsrc audiotestsrc compositor videoconvertscale videoconvert videorate audiomixer "
             "audioconvert audioresample x264enc avenc_aac h264parse aacparse flvmux rtmp2sink matroskamux filesink tee queue "
-            "appsink jpegdec decodebin typefind fakesink capsfilter "
+            "appsink jpegdec decodebin typefind fakesink capsfilter mp4mux level "
             # WebKit's own media/WebAudio stack (the chat page) aborts its web process without these
             "autoaudiosink autovideosink volume appsrc playbin3 uridecodebin3 pulsesink").split()
 

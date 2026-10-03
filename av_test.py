@@ -35,7 +35,7 @@ if args.no_screen: cfg["screen"] = False
 if args.no_desktop_audio: cfg["desktop_audio"] = False
 
 log = E.Log("rtmp-test.log" if args.rtmp_local else "av-test.log", echo=print)
-log("=== TikTok LIVE Native v21 · prueba " + ("FLV/RTMP local" if args.rtmp_local else "A/V local") + " ===")
+log(f"=== TikTok LIVE Native {E.VERSION} · prueba " + ("FLV/RTMP local" if args.rtmp_local else "A/V local") + " ===")
 loop = GLib.MainLoop(); result = {"ok": False}
 portal = E.ScreenPortal(log)
 

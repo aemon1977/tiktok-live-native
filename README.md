@@ -36,8 +36,12 @@ Diagnóstico rápido en cualquier PC: `./TikTok-LIVE-Native-x86_64.AppImage --se
   reconexión automática y cierre de la sala al detener.
 - **Chat y espectadores:** panel en la app y **chat superpuesto semitransparente** siempre encima, que se puede mover,
   redimensionar y ocultar. Muestra el contador oficial de espectadores.
-- **Grabación** opcional: copia exacta de lo emitido en `~/Vídeos/TikTok LIVE/`.
+- **Grabación** opcional en **MP4**: copia exacta de lo emitido en `~/Vídeos/TikTok LIVE/` (reproducible aunque se corte).
+- **Audio vigilado:** el sonido del equipo sigue a la salida donde realmente suena (p. ej. si cambias a auriculares) y,
+  si el audio se pierde durante el directo, la app avisa y rehace la cadena sola.
 - **Prueba local** de 8 s sin conectar con TikTok.
+- **Datos para OBS:** si prefieres emitir con OBS, la app te da el servidor y la clave de TikTok para copiar y pegar
+  (y un botón para finalizar la sala al acabar).
 
 ## Cómo funciona
 
@@ -45,7 +49,8 @@ Diagnóstico rápido en cualquier PC: `./TikTok-LIVE-Native-x86_64.AppImage --se
 pantalla/ventana (portal → PipeWire) ─┐
 cámara (V4L2) ────────────────────────┤ compositor ─┬─ vista previa
 micrófono + audio del equipo ── mezclador          ├─ H.264 (x264) ─┐
-                                                    └────────────────┴─ FLV → RTMP de TikTok (+ grabación)
+                                                    └────────────────┴─ FLV → RTMP de TikTok
+                                                                       └─ MP4 (grabación)
 ```
 
 Todo el vídeo y audio pasa por GStreamer. La URL RTMP se obtiene con la sesión web de TikTok de tu Firefox,

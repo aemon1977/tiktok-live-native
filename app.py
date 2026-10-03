@@ -60,10 +60,10 @@ class Win:
         self.cfg = E.load_cfg(); self.cams = E.list_cameras(); self.mics = E.list_mics()
         self.portal = None; self.portal_ready = False; self.eng = None; self.mode = "idle"
         self.live_url = None; self.room = None; self.retries = 0; self._rebuild = 0; self.cam_now = None
-        self.win = Adw.ApplicationWindow(application=app, title="TikTok LIVE Native", default_width=1180, default_height=820)
+        self.win = Adw.ApplicationWindow(application=app, title=f"TikTok LIVE Native {E.VERSION}", default_width=1180, default_height=820)
         self.win.connect("close-request", self.on_close)
         self.log = E.Log("app.log", fresh=False, echo=self.append_log)
-        self.log("=== TikTok LIVE Native v21 · inicio ===")
+        self.log(f"=== TikTok LIVE Native {E.VERSION} · inicio ===")
         self.build()
         self.refresh_session(); self.sync_ui()
         if self.cfg["screen"] and E.ScreenPortal.TOKEN.exists(): self.pick_screen(forget=False)  # restores last choice, no dialog
@@ -91,6 +91,9 @@ class Win:
         b = Gtk.Button(icon_name="folder-open-symbolic", tooltip_text="Abrir carpeta de grabaciones", valign=Gtk.Align.CENTER)
         b.connect("clicked", lambda *_: subprocess.Popen(["xdg-open", str(E.recordings_dir())], env=E.host_env())); sw.add_suffix(b)
         g.add(Adw.ActionRow(title="LIVE", subtitle="Se confirma al pulsar Iniciar LIVE: TikTok crea la sala en ese momento, no antes."))
+        row = Adw.ActionRow(title="Emitir con OBS", subtitle="Servidor y clave para pegar en OBS (crea la sala en TikTok)")
+        self.b_obs = Gtk.Button(label="Datos para OBS", valign=Gtk.Align.CENTER); self.b_obs.connect("clicked", self.on_obs)
+        row.add_suffix(self.b_obs); g.add(row)
         left.append(self.settings)
 
         g = Adw.PreferencesGroup(title="Vídeo"); self.settings.append(g)
@@ -211,7 +214,7 @@ class Win:
             f"   ·   Micrófono: {on(c['microphone'], 'ACTIVADO', 'DESACTIVADO')}   ·   Audio equipo: {on(c['desktop_audio'], 'ACTIVADO', 'DESACTIVADO')}   ·   {W}×{H} @ {E.QUALITY[c['quality']]} fps · {E.video_kbps(c)} kbps")
         busy = self.mode in ("test", "connecting", "live", "stopping")
         self.settings.set_sensitive(not busy)
-        self.b_test.set_sensitive(not busy); self.b_live.set_sensitive(not busy)
+        self.b_test.set_sensitive(not busy); self.b_live.set_sensitive(not busy); self.b_obs.set_sensitive(not busy)
         self.b_stop.set_sensitive(self.mode in ("connecting", "live"))
 
     def set_mode(self, mode, status=None):
@@ -339,7 +342,7 @@ class Win:
 
     def run_test(self):
         self.set_mode("test", "Grabando prueba local de 8 s…")
-        tlog = E.Log("av-test.log", echo=self.append_log); tlog("=== TikTok LIVE Native v21 · prueba A/V local (GUI) ===")
+        tlog = E.Log("av-test.log", echo=self.append_log); tlog(f"=== TikTok LIVE Native {E.VERSION} · prueba A/V local (GUI) ===")
         self.cam_now = E.check_devices(self.cfg, self.cams)[1]
         def go():
             eng = E.run_local_test(self.cfg, tlog, self.test_done, screen=self.portal if self.cfg["screen"] else None,
@@ -362,6 +365,51 @@ class Win:
         body = E.summary(self.cfg, self.cams, "EMISIÓN REAL")
         self.ask("Vas a iniciar una emisión REAL en TikTok.", body, "INICIAR LIVE", self.go_live, danger=True)
 
+    # ------------------------------------------------------------ OBS
+    def on_obs(self, *_):
+        if getattr(self, "obs_room", None): return self.show_obs(self.obs_room)  # same room until finished
+        if not self.refresh_session(): return self.info("Sin sesión TikTok", "Inicia sesión en tiktok.com con Firefox y vuelve a intentarlo.")
+        self.ask("Datos para OBS", "TikTok crea la sala del LIVE en este momento (igual que al pulsar Iniciar LIVE).\n\n"
+                 f"Título: {self.cfg['title'] or '(sin título)'}\n\nLa clave es personal: no la compartas ni la enseñes en directo.",
+                 "OBTENER DATOS", self.fetch_obs)
+
+    def fetch_obs(self):
+        self.log("OBS_DATA_REQUESTED")
+        def run():
+            try: room = tiktok.create_room(self.log, self.cfg["title"]); GLib.idle_add(self.got_obs, room)
+            except Exception as e: GLib.idle_add(lambda: self.info("No se pudo obtener", str(e)) and False)
+        threading.Thread(target=run, daemon=True).start()
+
+    def got_obs(self, room):
+        self.obs_room = room; self.log("OBS_DATA=SHOWN"); self.show_obs(room); return False
+
+    def show_obs(self, room):
+        """Server + stream key for OBS (Ajustes → Emisión → Personalizado). Never logged; key hidden until peeked."""
+        host, port, app, key = E.rtmp_parts(room["url"])
+        server = f"rtmp://{host}{'' if port == 1935 else f':{port}'}/{app}/"
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        for title, value, secret, done in (("Servidor", server, False, "Servidor copiado"), ("Clave de retransmisión", key, True, "Clave copiada")):
+            box.append(Gtk.Label(label=title, xalign=0, css_classes=["heading"]))
+            line = Gtk.Box(spacing=6)
+            entry = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True) if secret else Gtk.Entry(hexpand=True)
+            entry.set_text(value); entry.set_editable(False); line.append(entry)
+            b = Gtk.Button(icon_name="edit-copy-symbolic", tooltip_text="Copiar")
+            b.connect("clicked", lambda _b, v=value, t=done: (self.win.get_clipboard().set(v), self.toast(t)))
+            line.append(b); box.append(line)
+        box.append(Gtk.Label(label="En OBS: Ajustes → Emisión → Servicio «Personalizado». Pulsa «Finalizar sala» al terminar.",
+                             wrap=True, xalign=0, css_classes=["dim-label"]))
+        d = Adw.AlertDialog(heading="Datos para OBS", extra_child=box)
+        d.add_response("finish", "Finalizar sala"); d.add_response("close", "Cerrar")
+        d.set_response_appearance("finish", Adw.ResponseAppearance.DESTRUCTIVE); d.set_default_response("close"); d.set_close_response("close")
+        def resp(d, r):
+            if r == "finish":
+                r_, self.obs_room = self.obs_room, None
+                threading.Thread(target=tiktok.finish_room, args=(self.log, r_), daemon=True).start(); self.toast("Sala de TikTok finalizada")
+        d.connect("response", resp); d.present(self.win)
+
+    def toast(self, text):
+        self.status.set_text(text)
+
     def go_live(self):
         self.log("LIVE_CONFIRMED_BY_USER"); self.log("\n".join(E.summary(self.cfg, self.cams, "LIVE_CONFIG").splitlines()))
         self.set_mode("connecting", "Obteniendo RTMP de TikTok…")
@@ -373,7 +421,7 @@ class Win:
     def start_live(self, room):
         if self.mode != "connecting":  # user pressed stop while TikTok was creating the room: close it
             self.log("LIVE_ABORTED_BEFORE_START"); self.room = room; self.finish_room(); return
-        self.room = room; self.live_url = room["url"]; self.retries = 0; self.stop_engine(self.launch_live)
+        self.room = room; self.live_url = room["url"]; self.retries = 0; self.audio_recoveries = 0; self.stop_engine(self.launch_live)
         if not room["user"]: self.log("CHAT=NO_USERNAME")
 
     def launch_live(self):
@@ -381,8 +429,8 @@ class Win:
         err, cam = E.check_devices(self.cfg, self.cams); self.cam_now = cam
         if err: self.live_failed(err[1]); return False
         rec = None
-        if self.cfg["record_live"]:  # one file per (re)connection: a cut FLV stays playable up to the cut
-            rec = E.recordings_dir() / time.strftime("live-%Y%m%d-%H%M%S.flv"); self.log(f"RECORDING={rec.name}")
+        if self.cfg["record_live"]:  # one file per (re)connection; fragmented MP4 stays playable up to a cut
+            rec = E.recordings_dir() / time.strftime("live-%Y%m%d-%H%M%S.mp4"); self.log(f"RECORDING={rec.name}")
             self.last_rec = rec
         try:
             eng = E.Engine(self.cfg, "rtmp", self.log, self.portal if self.cfg["screen"] else None, cam, E.preview_sink(self.cfg), record=rec,
@@ -390,7 +438,7 @@ class Win:
         except Exception as e: self.live_failed(str(e)); return False
         self.eng = eng; self.attach(eng); self.overlay.set_visible(False)
         self.log("STREAMING=CONNECTING"); eng.start(); self.set_mode("live", "Conectando con TikTok…")
-        state = {"bytes": 0, "started": False}
+        state = {"bytes": 0, "started": False, "silent": 0, "last": {}, "stalled": {}}
         def watch():
             if self.eng is not eng or self.mode != "live": return False
             if eng.bytes and not state["started"]:
@@ -403,10 +451,13 @@ class Win:
                     if r.get("title"): GLib.timeout_add_seconds(10, lambda: (current() and self.check_title(r), False)[1])
                     GLib.timeout_add_seconds(5, lambda: self.poll_viewers(r, current))
             kbps = (eng.bytes - state["bytes"]) * 8 // 1000; state["bytes"] = eng.bytes
+            warn = self.audio_watch(eng, state) if state["started"] else ""
+            if warn is None: return False  # pipeline being rebuilt
             v = (self.room or {}).get("viewers")
             if state["started"]: self.status.set_markup(f"<span foreground='#e01b24'>●</span> EN DIRECTO · {kbps} kbps enviados"
                                                        + (f" · 👁 {v} espectadores" if v is not None else "")
-                                                       + (" · ⚠ TikTok no muestra el título" if (self.room or {}).get("title_bad") else ""))
+                                                       + (" · ⚠ TikTok no muestra el título" if (self.room or {}).get("title_bad") else "")
+                                                       + (f" · <span foreground='#e5a50a'>⚠ {warn}</span>" if warn else ""))
             return True
         GLib.timeout_add_seconds(1, watch)
         return False
@@ -427,6 +478,45 @@ class Win:
             self.log("TITLE=" + ("APPLIED" if ok else "NOT_APPLIED"))
             room["title_bad"] = not ok  # shown on the live status line
         threading.Thread(target=run, daemon=True).start()
+
+    MAX_AUDIO_RECOVERIES = 3
+
+    def audio_watch(self, eng, state):
+        """Once per second while live. Returns a warning text ("" = fine), or None if it restarted the pipeline.
+        Digital silence with the mic on (a real mic always has some noise) or a source that stops delivering for 6 s
+        means the audio path is broken: restart the pipeline with the same RTMP URL (as a reconnect does)."""
+        c = self.cfg; problems = []
+        for key, wanted, name in (("MIC", c["microphone"], "micrófono"), ("DESKTOP_AUDIO", c["desktop_audio"], "audio del equipo")):
+            if not wanted: continue
+            n = eng.counts.get(key, 0)
+            state["stalled"][key] = state["stalled"].get(key, 0) + 1 if n == state["last"].get(key) else 0
+            state["last"][key] = n
+            if state["stalled"][key] >= 6: problems.append(f"{name} sin datos")
+        # Sound moved to another output (headphones switched on, output changed): follow it.
+        state["tick"] = state.get("tick", 0) + 1
+        if c["desktop_audio"] and eng.desktop_dev and state["tick"] % 3 == 0:
+            now = E.desktop_monitor()
+            state["moved"] = state.get("moved", 0) + 1 if now and now != eng.desktop_dev else 0
+            if state["moved"] >= 2:  # same answer twice (~6 s): not a blip
+                self.log(f"DESKTOP_AUDIO_MOVED {eng.desktop_dev} -> {now}")
+                self.status.set_text("Audio del equipo cambió de salida · ajustando…"); self.stop_engine(self.launch_live); return None
+        peak = eng.audio_peak
+        state["silent"] = state["silent"] + 1 if peak is not None and peak < -120 else 0
+        if state["silent"] >= 10 and not c["microphone"]:  # desktop-only silence can be legitimate: warn, don't restart
+            if not state.get("quiet_logged"): self.log("AUDIO=SILENT (solo audio del equipo)"); state["quiet_logged"] = True
+            return "sin sonido: no suena nada en la salida capturada"
+        state["quiet_logged"] = state["silent"] >= 10 and state.get("quiet_logged", False)
+        if c["microphone"] and state["silent"] >= 8: problems.append("sin sonido (silencio digital)")
+        if not problems:
+            if state.get("warned"): self.log("AUDIO=OK"); state["warned"] = False
+            return ""
+        if not state.get("warned"): self.log("AUDIO=FAIL " + ", ".join(problems)); state["warned"] = True
+        if self.audio_recoveries < self.MAX_AUDIO_RECOVERIES:
+            self.audio_recoveries += 1
+            self.log(f"AUDIO_RECOVERY={self.audio_recoveries}/{self.MAX_AUDIO_RECOVERIES} reinicio de la cadena")
+            self.status.set_text(f"⚠ Audio perdido ({', '.join(problems)}) · recuperando {self.audio_recoveries}/{self.MAX_AUDIO_RECOVERIES}…")
+            self.stop_engine(self.launch_live); return None
+        return "AUDIO: " + ", ".join(problems) + " (revisa micrófono/salida de audio)"
 
     STATS = E.CFG / "live-stats.json"  # read by the chat overlay process
 

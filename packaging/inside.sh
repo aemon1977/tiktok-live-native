@@ -14,5 +14,5 @@ python3 /src/packaging/assemble.py /build/AppDir /src
 cd /build
 wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
 chmod +x appimagetool
-VERSION="$(date +%Y.%m.%d)" ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool -n /build/AppDir /src/dist/TikTok-LIVE-Native-x86_64.AppImage
+VERSION="$(python3 -c 'import re;print(re.search(r"VERSION = \"(.+?)\"", open("/src/engine.py").read())[1])')" ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool -n /build/AppDir /src/dist/TikTok-LIVE-Native-x86_64.AppImage
 chown -R "${HOST_UID:-0}:${HOST_GID:-0}" /src/dist

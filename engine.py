@@ -13,6 +13,7 @@ gi.require_version("Gio", "2.0"); gi.require_version("Gst", "1.0")
 from gi.repository import Gio, GLib, Gst
 Gst.init(None)
 
+VERSION = "1.1.0"
 HERE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("TTLN_DATA_DIR") or HERE)  # AppRun points this to ~/.local/share/tiktok-live-native
 LOGS = DATA / "logs"; CFG = DATA / "config"
@@ -146,11 +147,29 @@ def list_mics():
             if not s["name"].endswith(".monitor") and not s.get("monitor_source")]
 
 
+def pactl_json(*args):
+    try: return json.loads(subprocess.run(["pactl", "-f", "json", *args], capture_output=True, text=True, timeout=5,
+                                          env={**os.environ, "LC_ALL": "C"}).stdout or "[]")
+    except Exception: return []
+
+
 def desktop_monitor():
-    """Monitor source of the current default output = what you hear. None if Pulse/PipeWire doesn't report one."""
-    try: sink = subprocess.run(["pactl", "get-default-sink"], capture_output=True, text=True, timeout=5).stdout.strip()
-    except Exception: return None
-    return sink + ".monitor" if sink else None
+    """Monitor of the output where sound is actually playing: the default output if something plays there, otherwise
+    the output an active stream uses (e.g. the game moved to wireless headphones), otherwise the default output.
+    A fixed default-at-start monitor went silent for 19 min when the game's sound moved to another output (2026-10-02)."""
+    try: default = subprocess.run(["pactl", "get-default-sink"], capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception: default = ""
+    name = pick_output(default, pactl_json("list", "sinks"), pactl_json("list", "sink-inputs"))
+    return name + ".monitor" if name else None
+
+
+def pick_output(default, sinks, inputs):
+    """Output to capture: default if something plays there (or nothing plays anywhere), else the output of the first
+    playing stream. Corked (paused) and muted streams don't count."""
+    names = {x["index"]: x["name"] for x in sinks}
+    playing = [i["sink"] for i in inputs if not i.get("corked") and not i.get("mute")]
+    if not playing or any(names.get(k) == default for k in playing): return default
+    return names.get(playing[0], default)
 
 
 def summary(cfg, cams=None, title="FUENTES DE PRUEBA"):
@@ -282,7 +301,7 @@ def rtmp_parts(url):
     return u.hostname, u.port or 1935, app, stream + ("?" + u.query if u.query else "")
 
 
-def describe(cfg, mode, screen=None, cam=None, preview="fakesink sync=false", out=None, record=None):
+def describe(cfg, mode, screen=None, cam=None, preview="fakesink sync=false", out=None, record=None, desk=None):
     """gst-launch description. mode: preview | record | rtmp. screen: ScreenPortal or "test". Secrets never go in here."""
     W, H = FORMATS[cfg["orientation"]]; F, KB = QUALITY[cfg["quality"]], video_kbps(cfg); g = geometry(cfg, *(cam and (cam["w"], cam["h"]) or (16, 9)))
     pads = ""
@@ -310,21 +329,27 @@ def describe(cfg, mode, screen=None, cam=None, preview="fakesink sync=false", ou
     if mode == "preview": return " ".join(p)
     # Audio: mic + computer sound (monitor of the default output) mixed; silence keeps a valid track if both are off.
     A = "audio/x-raw,format=S16LE,layout=interleaved,rate=48000,channels=2"
-    p.append(f"audiomixer name=amix ! audioconvert ! avenc_aac name=aenc bitrate=160000 ! aacparse ! queue ! mux.")
+    # level: 1 reading/s of what actually leaves the mixer (the app warns/recovers on digital silence).
+    p.append(f"audiomixer name=amix ! audioconvert ! level name=alevel interval=1000000000 ! audioconvert ! "
+             f"avenc_aac name=aenc bitrate=160000 ! aacparse ! tee name=atee ! queue ! mux.")
+    # No do-timestamp and no device clock: with arrival-time stamps two capture devices (USB mic + sound card)
+    # drifted apart until the mixer dropped everything as late -> 19 min of digital silence (live 2026-10-02 16:59).
+    # Audio base sources slave their own timestamps to the shared system clock instead.
+    PS = "pulsesrc provide-clock=false buffer-time=200000 latency-time=10000"
     if cfg["microphone"]:
         dev = f' device="{cfg["mic_device"]}"' if cfg["mic_device"] else ""
-        p.append(f"pulsesrc name=mic_src do-timestamp=true{dev} ! queue ! audioconvert ! audioresample ! {A} ! queue name=mic_q ! amix.")
+        p.append(f"{PS} name=mic_src{dev} ! queue ! audioconvert ! audioresample ! {A} ! queue name=mic_q ! amix.")
     if cfg["desktop_audio"]:
-        p.append(f'pulsesrc name=desk_src do-timestamp=true device="{desktop_monitor()}" ! queue ! audioconvert ! audioresample ! {A} ! '
+        p.append(f'{PS} name=desk_src device="{desk or desktop_monitor()}" ! queue ! audioconvert ! audioresample ! {A} ! '
                  f"queue name=desk_q ! amix.")
     if not (cfg["microphone"] or cfg["desktop_audio"]):
         p.append(f"audiotestsrc name=mic_src is-live=true wave=silence ! {A} ! amix.")
     # No tune=zerolatency: it disables lookahead/mb-tree (visible quality loss) to save ~1 s of latency nobody needs here.
     p.append(f"vt. ! queue ! x264enc name=venc bitrate={KB} speed-preset=faster bframes=0 key-int-max={2 * F} ! "
-             f"h264parse ! queue ! mux.")
-    p.append(f'matroskamux name=mux ! filesink name=out location="{out}"' if mode == "record" else
-             "flvmux name=mux streamable=true ! " + (f'tee name=ft ! queue ! rtmp2sink name=out ft. ! queue ! filesink name=rec location="{record}"'
-                                                     if record else "rtmp2sink name=out"))
+             f"h264parse ! tee name=vtee ! queue ! mux.")
+    p.append(f'matroskamux name=mux ! filesink name=out location="{out}"' if mode == "record" else "flvmux name=mux streamable=true ! rtmp2sink name=out")
+    if record:  # same encoded streams, own MP4 muxer; fragmented so a cut recording stays playable up to the cut
+        p.append(f'vtee. ! queue ! rmux. atee. ! queue ! rmux. mp4mux name=rmux fragment-duration=1000 ! filesink name=rec location="{record}"')
     return " ".join(p)
 
 
@@ -337,7 +362,11 @@ class Engine:
                  on_error=None, on_eos=None, record=None):
         self.cfg, self.mode, self.log, self.on_error, self.on_eos = cfg, mode, log, on_error, on_eos
         self.counts = {}; self.bytes = 0; self.error = None; self.eos = False; self._stop_cb = None
-        self.pipe = Gst.parse_launch(describe(cfg, mode, screen, cam, preview, out, record))
+        self.desktop_dev = desktop_monitor() if cfg["desktop_audio"] and mode != "preview" else None
+        self.pipe = Gst.parse_launch(describe(cfg, mode, screen, cam, preview, out, record, self.desktop_dev))
+        if self.desktop_dev: log(f"DESKTOP_AUDIO_DEVICE={self.desktop_dev}")
+        self.pipe.use_clock(Gst.SystemClock.obtain())  # one clock for screen, camera and both audio devices
+        self.audio_peak = None  # dB of the last level reading (-inf = digital silence)
         if rtmp_url:
             host, port, app, stream = rtmp_parts(rtmp_url)
             Log.secrets.update({rtmp_url, stream, stream.split("?")[0]})
@@ -365,6 +394,9 @@ class Engine:
             self.eos = True; self.log("EOS")
             if self._stop_cb: self._finish_stop()
             elif self.on_eos: self.on_eos()
+        elif m.type == Gst.MessageType.ELEMENT and m.get_structure() and m.get_structure().get_name() == "level":
+            peaks = m.get_structure().get_value("peak")
+            self.audio_peak = max(peaks) if peaks else None
         elif m.type == Gst.MessageType.STATE_CHANGED and m.src == self.pipe:
             self.log("PIPELINE_STATE=" + m.parse_state_changed()[1].value_nick)
 
@@ -447,17 +479,17 @@ def run_local_test(cfg, log, on_done, screen=None, cams=None, seconds=8, preview
     if err: log(err[0]); return fail(err[1])
     if cam: log(f"CAMERA_CAPS={cam['caps']}")
     mkv = LOGS / "av-test.mkv"; flv = LOGS / "rtmp-test.flv"; listener = None
-    for f in (mkv, flv, LOGS / "rtmp-record-test.flv"): f.unlink(missing_ok=True)
+    for f in (mkv, flv, LOGS / "rtmp-record-test.mp4"): f.unlink(missing_ok=True)
     url = None
     if rtmp_local:  # ffmpeg acts as RTMP server; the query mimics TikTok's signed stream name
         url = "rtmp://127.0.0.1:19350/game/stream-localtest?expire=1&sign=abc"
         listener = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-listen", "1", "-timeout", "20",
                                      "-i", "rtmp://127.0.0.1:19350/game/stream-localtest", "-c", "copy", str(flv)],
-                                    stdout=subprocess.DEVNULL, stderr=open(LOGS / "rtmp-listener.log", "w"))
+                                    stdout=subprocess.DEVNULL, stderr=open(LOGS / "rtmp-listener.log", "w"), env=host_env())
         time.sleep(1)
     try:
         eng = Engine(cfg, "rtmp" if rtmp_local else "record", log, screen, cam, preview, mkv, rtmp_url=url,
-                     record=LOGS / "rtmp-record-test.flv" if rtmp_local else None)  # same tee as a recorded LIVE
+                     record=LOGS / "rtmp-record-test.mp4" if rtmp_local else None)  # same tee as a recorded LIVE
     except Exception as e:
         if listener: listener.kill()
         return fail(f"PIPELINE_BUILD: {e}")
@@ -483,7 +515,7 @@ def run_local_test(cfg, log, on_done, screen=None, cams=None, seconds=8, preview
         res["OUTPUT"] = "PASS" if eng.eos and target.exists() and target.stat().st_size > 10000 and {"h264", "aac"} <= has else "FAIL"
         if rtmp_local:
             res["FLV"] = res["RTMP_LOCAL"] = res["OUTPUT"]
-            rec = LOGS / "rtmp-record-test.flv"; rs = {x.get("codec_name") for x in probe(rec)} if rec.exists() else set()
+            rec = LOGS / "rtmp-record-test.mp4"; rs = {x.get("codec_name") for x in probe(rec)} if rec.exists() else set()
             res["LIVE_RECORDING"] = "PASS" if {"h264", "aac"} <= rs and rec.stat().st_size > 10000 else "FAIL"
         for k, v in res.items(): log(f"{k}={v}" + (f" buffers={c.get(k, 0)}" if v != "NOT_REQUESTED" and k in c else ""))
         for s in streams:

@@ -35,8 +35,27 @@ for fmt in E.FORMATS:
         gx, gy = E.pip_fractions(c, x, y, w, h); assert abs(gx - fx) < .01 and abs(gy - fy) < .01, (fmt, fx, fy, gx, gy)
 assert E.pip_fractions(cfg, -500, 99999, 100, 56) == (0.0, 1.0)  # dragged off-canvas clamps to the edge
 
+# desktop audio follows the sound (live 2026-10-02: game moved to headphones -> 19 min of silence)
+SK = [{"index": 1, "name": "placa"}, {"index": 2, "name": "cascos"}]
+assert E.pick_output("placa", SK, []) == "placa"                                            # nothing plays: default
+assert E.pick_output("placa", SK, [{"sink": 2, "corked": False}]) == "cascos"                # sound moved: follow it
+assert E.pick_output("placa", SK, [{"sink": 2}, {"sink": 1}]) == "placa"                     # plays on default too
+assert E.pick_output("placa", SK, [{"sink": 2, "corked": True}, {"sink": 2, "mute": True}]) == "placa"  # paused/muted
+
 # TikTok push URL: the signed query belongs to the stream name
 assert E.rtmp_parts("rtmp://push.example.com/game/stream-123?expire=1&sign=ab") == ("push.example.com", 1935, "game", "stream-123?expire=1&sign=ab")
+
+# every GStreamer element the pipelines use is bundled in the AppImage (v1.1.0 almost shipped without mp4mux/level)
+import re
+from gi.repository import Gst
+c = {**E.DEFAULTS, "screen": True, "camera": True, "camera_device": "/dev/video2", "microphone": True, "desktop_audio": True}
+cam = {"caps": "video/x-raw,width=1280,height=720", "jpeg": True, "w": 1280, "h": 720}
+d = (E.describe(c, "rtmp", "test", cam, E.preview_sink(c), record="/tmp/x.mp4", desk="x.monitor") + " " +
+     E.describe(c, "record", "test", cam, out="/tmp/x.mkv", desk="x.monitor"))
+bundled = set(re.search(r"ELEMENTS = \((.*?)\)\.split\(\)", (Path(__file__).parent / "packaging/assemble.py").read_text(), re.S)[1]
+              .replace('"', "").split())
+used = {w for w in re.findall(r"(?:^|!\s*|\s)([a-z][a-z0-9]+)(?=\s|$)", d) if Gst.ElementFactory.find(w)}
+assert used <= bundled, f"faltan en packaging/assemble.py ELEMENTS: {sorted(used - bundled)}"
 
 # secrets never reach the log file
 E.Log.secrets.add("stream-SECRET?sign=x")
