@@ -13,7 +13,7 @@ gi.require_version("Gio", "2.0"); gi.require_version("Gst", "1.0")
 from gi.repository import Gio, GLib, Gst
 Gst.init(None)
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 HERE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("TTLN_DATA_DIR") or HERE)  # AppRun points this to ~/.local/share/tiktok-live-native
 LOGS = DATA / "logs"; CFG = DATA / "config"
@@ -32,7 +32,7 @@ def video_kbps(cfg):
     W, H = FORMATS[cfg["orientation"]]
     return BITRATE[(W * H > 1280 * 720, QUALITY[cfg["quality"]])]
 LAYOUT_NAMES = {"pip": "Pantalla + cámara PiP", "screen": "Pantalla completa", "camera": "Cámara completa", None: "Sin vídeo"}
-DEFAULTS = {"title": "", "record_live": False, "chat_overlay": True, "desktop_audio": True, "camera_mode": "", "orientation": "vertical720", "quality": "25", "screen": True, "camera": False, "camera_device": "",
+DEFAULTS = {"title": "", "engine": "app", "record_live": False, "chat_overlay": True, "desktop_audio": True, "camera_mode": "", "orientation": "vertical720", "quality": "25", "screen": True, "camera": False, "camera_device": "",
             "microphone": True, "mic_device": "", "pip_size": 0.30, "pip_x": 1.0, "pip_y": 0.0}
 
 

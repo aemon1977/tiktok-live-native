@@ -14,10 +14,12 @@ WK_DIR = "/usr/lib/x86_64-linux-gnu/webkitgtk-6.0"           # compiled into lib
 WK_LINK = "/tmp/.ttln-webkitgtk6-" + "x" * (len(WK_DIR) - 22)  # same length, symlinked to the AppDir copy by AppRun
 assert len(WK_LINK) == len(WK_DIR)
 
+# libOpenGL (glvnd's thin GL entry point, needed by OBS) IS bundled: Debian/Ubuntu/Fedora ship it in an optional
+# package (libopengl0 / libglvnd-opengl); it dispatches to the host's GL like the rest of glvnd.
 # Prefix match on purpose: libwayland-client/-egl, libGLX_mesa, libGLESv2, libdrm_amdgpu... must all come from the host,
 # or the host's Mesa ends up resolving against our older copies (seen: wl_display_create_queue_with_name missing).
 HOST = re.compile(r"^(ld-linux|libc\.|libm\.|libdl\.|libpthread|librt\.|libresolv|libutil\.|libnsl|libanl|libmvec|libBrokenLocale|"
-                  r"libthread_db|libGL|libEGL|libOpenGL|libgbm|libdrm|libwayland-(client|egl|cursor)|libxcb-dri|libxshmfence|"
+                  r"libthread_db|libGL|libEGL|libgbm|libdrm|libwayland-(client|egl|cursor)|libxcb-dri|libxshmfence|"
                   r"libstdc\+\+|libgcc_s|libfontconfig|libfreetype|libexpat|libpipewire-0\.3|libdbus-1|libudev)")
 
 ELEMENTS = ("pipewiresrc v4l2src pulsesrc videotestsrc audiotestsrc compositor videoconvertscale videoconvert videorate audiomixer "
@@ -49,7 +51,7 @@ copytree("/usr/lib/python3.12", U / "lib/python3.12",
          ignore=shutil.ignore_patterns("test", "tests", "idlelib", "tkinter", "turtledemo", "ensurepip", "lib2to3", "__pycache__"))
 copytree("/usr/lib/python3/dist-packages", U / "lib/python3/dist-packages", ignore=shutil.ignore_patterns("__pycache__"))
 app = U / "share/tiktok-live-native"
-for f in ("app.py", "engine.py", "tiktok.py", "chat_overlay.py", "av_test.py", "selftest.py", "README.md"): copy(SRC / f, app / f)
+for f in ("app.py", "engine.py", "tiktok.py", "chat_overlay.py", "obs_launcher.py", "av_test.py", "selftest.py", "README.md"): copy(SRC / f, app / f)
 copy(SRC / "packaging/smoke.py", app / "smoke.py")
 copy(Path(sh("which", "pactl").strip()), U / "bin/pactl")
 
@@ -61,6 +63,21 @@ for theme in ("Adwaita", "hicolor"): copytree(f"/usr/share/icons/{theme}", U / f
 copytree(SYSL / "gdk-pixbuf-2.0", L / "gdk-pixbuf-2.0")
 for m in ("libgiognutls.so",): copy(SYSL / "gio/modules" / m, L / "gio/modules" / m)
 copytree(WK_DIR, L / "webkitgtk-6.0")
+
+# ---- OBS (integrated alternative engine): binary, libobs, the plugins a TikTok scene needs, data, Qt platform plugins.
+# Left out: browser source (CEF, ~250 MB), pro capture cards (AJA/DeckLink), NVENC/QSV, VST, VLC, JACK, and
+# frontend-tools (Python/Lua scripting: its interpreters expect unbundled modules and OBS segfaulted at startup).
+OBS_PLUGINS = ("image-source linux-capture linux-pipewire linux-pulseaudio linux-v4l2 obs-ffmpeg obs-filters "
+               "obs-outputs obs-transitions obs-websocket obs-x264 rtmp-services text-freetype2").split()
+for b in ("obs", "obs-ffmpeg-mux"): copy(f"/usr/bin/{b}", U / "bin" / b)
+for lib in SYSL.glob("libobs*.so*"): copy(lib, L / lib.name)
+for pl in OBS_PLUGINS: copy(SYSL / "obs-plugins" / f"{pl}.so", L / "obs-plugins" / f"{pl}.so")
+copytree("/usr/share/obs/libobs", U / "share/obs/libobs"); copytree("/usr/share/obs/obs-studio", U / "share/obs/obs-studio")
+for pl in OBS_PLUGINS:
+    if Path(f"/usr/share/obs/obs-plugins/{pl}").is_dir(): copytree(f"/usr/share/obs/obs-plugins/{pl}", U / f"share/obs/obs-plugins/{pl}")
+for d in ("platforms", "wayland-decoration-client", "wayland-graphics-integration-client", "wayland-shell-integration",
+          "xcbglintegrations", "imageformats", "iconengines", "platforminputcontexts", "egldeviceintegrations", "tls", "generic"):
+    if (SYSL / "qt6/plugins" / d).is_dir(): copytree(SYSL / "qt6/plugins" / d, L / "qt6/plugins" / d)
 
 # ---- GStreamer: only the plugins providing the elements we use (+ discoverer), and the registry scanner
 gi_env = "import gi; gi.require_version('Gst','1.0'); from gi.repository import Gst; Gst.init(None)\n"
@@ -92,6 +109,15 @@ for lib in L.glob("libwebkitgtk-6.0.so*"):
     assert n, f"{WK_DIR} not found in {lib}"
     lib.write_bytes(data.replace(WK_DIR.encode(), WK_LINK.encode())); print(f"patched {n} path(s) in {lib.name}")
 
+# ---- OBS: data/plugin dirs are compiled in (env vars don't cover libobs' own data) -> same-length /tmp links (AppRun)
+OBS_SUBST = {b"/usr/share/obs/": b"/tmp/.ttln-obs/",
+             b"/usr/lib/x86_64-linux-gnu/obs-plugins": b"/tmp/.ttln-obsplug-" + b"x" * 18}
+for k, v in OBS_SUBST.items(): assert len(k) == len(v), (k, v)
+for f in [U / "bin/obs", *L.glob("libobs*.so*"), *(L / "obs-plugins").glob("*.so")]:
+    data = f.read_bytes(); new = data
+    for k, v in OBS_SUBST.items(): new = new.replace(k, v)
+    if new != data: f.write_bytes(new); print(f"patched OBS paths in {f.name}")
+
 # ---- gnutls: Ubuntu's build reads CAs from a fixed file that openSUSE/Fedora name differently -> same-length /tmp link
 CA, CA_LINK = b"/etc/ssl/certs/ca-certificates.crt", b"/tmp/.ttln-ca-bundle-xxxxxxxxxxxxx"
 assert len(CA) == len(CA_LINK)
@@ -100,7 +126,8 @@ for lib in L.glob("libgnutls.so*"):
     if n: lib.write_bytes(data.replace(CA, CA_LINK)); print(f"patched {n} CA path(s) in {lib.name}")
 
 # ---- AppRun, desktop entry, icon
-apprun = (SRC / "packaging/AppRun").read_text().replace("@WK_LINK@", WK_LINK).replace("@CA_LINK@", CA_LINK.decode())
+apprun = (SRC / "packaging/AppRun").read_text().replace("@WK_LINK@", WK_LINK).replace("@CA_LINK@", CA_LINK.decode()) \
+    .replace("@OBS_DATA_LINK@", "/tmp/.ttln-obs").replace("@OBS_PLUG_LINK@", OBS_SUBST[b"/usr/lib/x86_64-linux-gnu/obs-plugins"].decode())
 (APPDIR / "AppRun").write_text(apprun); (APPDIR / "AppRun").chmod(0o755)
 copy(SRC / "packaging/tiktok-live-native.desktop", APPDIR / "tiktok-live-native.desktop")
 copy(SRC / "packaging/tiktok-live-native.svg", APPDIR / "tiktok-live-native.svg")

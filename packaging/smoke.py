@@ -3,6 +3,7 @@
 H.264+AAC encode, and HTTPS through both TLS stacks (Python requests; GIO/gnutls = what WebKit uses). No TikTok calls
 that change anything: only a plain GET of the public home page."""
 import os, sys
+from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 ok = True
 
@@ -70,8 +71,18 @@ def pactl():
     return next((l.split(":", 1)[1].strip() for l in r.stdout.splitlines() if l.startswith("Server Name")), "")
 
 
+def obs():  # integrated OBS binary + its libraries resolve on this distro (no display needed for --version)
+    import subprocess, obs_launcher as OL
+    b = OL.obs_binary()
+    if not b: return "SKIP (OBS no incluido: ejecución desde código)"
+    r = subprocess.run([b, "--version"], capture_output=True, text=True, timeout=20)
+    if "OBS Studio" not in r.stdout: raise RuntimeError((r.stderr or r.stdout).strip()[-300:])
+    plugs = sorted(p.stem for p in (Path(b).parent.parent / "lib/x86_64-linux-gnu/obs-plugins").glob("*.so"))
+    return r.stdout.strip() + f" · {len(plugs)} plugins"
+
+
 for name, fn in (("TYPELIBS", typelibs), ("GST_ELEMENTS", elements), ("ENCODE", encode), ("HTTPS_PYTHON", https_requests),
-                 ("HTTPS_GIO", https_gio), ("AUDIO_SERVER", pactl)):
+                 ("HTTPS_GIO", https_gio), ("AUDIO_SERVER", pactl), ("OBS", obs)):
     check(name, fn)
 print("SELFTEST=" + ("PASS" if ok else "FAIL"))
 sys.exit(0 if ok else 1)

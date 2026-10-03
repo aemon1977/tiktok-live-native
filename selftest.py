@@ -42,6 +42,17 @@ assert E.pick_output("placa", SK, [{"sink": 2, "corked": False}]) == "cascos"   
 assert E.pick_output("placa", SK, [{"sink": 2}, {"sink": 1}]) == "placa"                     # plays on default too
 assert E.pick_output("placa", SK, [{"sink": 2, "corked": True}, {"sink": 2, "mute": True}]) == "placa"  # paused/muted
 
+# integrated OBS: camera settings use V4L2's packing (framerate = frame interval) and the scene mirrors the app
+import obs_launcher as OL
+v = OL.v4l2_settings({**cfg, "camera_device": "/dev/video2"}, {"caps": "video/x-raw,format=YUY2,width=1280,height=720,framerate=30/1",
+                                                            "jpeg": False, "w": 1280, "h": 720})
+assert v["resolution"] == (1280 << 16) | 720 and v["framerate"] == (1 << 16) | 30 and v["pixelformat"] == 0x56595559, v
+col = OL.scene_collection({**cfg, "orientation": "horizontal"}, {"caps": "image/jpeg,width=1920,height=1080,framerate=30/1",
+                                                                 "jpeg": True, "w": 1920, "h": 1080})
+it = {i["name"]: i for i in col["sources"][0]["settings"]["items"]}
+assert (it["Cámara"]["pos"]["x"], it["Cámara"]["bounds"]["x"]) == (E.geometry({**cfg, "orientation": "horizontal"}, 1920, 1080)["camera"][0],
+                                                                   E.geometry({**cfg, "orientation": "horizontal"}, 1920, 1080)["camera"][2])
+
 # TikTok push URL: the signed query belongs to the stream name
 assert E.rtmp_parts("rtmp://push.example.com/game/stream-123?expire=1&sign=ab") == ("push.example.com", 1935, "game", "stream-123?expire=1&sign=ab")
 

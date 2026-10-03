@@ -1,8 +1,8 @@
 # TikTok LIVE Native
 
 Aplicación nativa de Linux para emitir directamente a **TikTok LIVE**: pantalla o ventana, cámara, micrófono y audio
-del equipo, con vista previa, chat superpuesto y grabación. Sin OBS, sin Wine, sin máquinas virtuales y sin
-TikTok LIVE Studio.
+del equipo, con vista previa, chat superpuesto y grabación. Emite con su propio motor o con el **OBS integrado** que
+lleva dentro, ya configurado. Sin Wine, sin máquinas virtuales y sin TikTok LIVE Studio.
 
 > Proyecto independiente, **no oficial**, sin relación con TikTok ni ByteDance. Usa la sesión web de tu propia
 > cuenta; tu cuenta debe tener acceso a LIVE.
@@ -23,7 +23,7 @@ Requisitos del sistema:
 - Sesión gráfica (Wayland o X11) con **PipeWire** y **xdg-desktop-portal** (lo normal en GNOME y KDE actuales).
 - **Firefox** con la sesión de TikTok iniciada (también Firefox Snap o Flatpak).
 
-Diagnóstico rápido en cualquier PC: `./TikTok-LIVE-Native-x86_64.AppImage --selftest`
+Diagnóstico rápido en cualquier PC: `./TikTok-LIVE-Native-x86_64.AppImage --selftest` (y `--obs-test` para el OBS integrado)
 
 ## Qué hace
 
@@ -40,6 +40,9 @@ Diagnóstico rápido en cualquier PC: `./TikTok-LIVE-Native-x86_64.AppImage --se
 - **Audio vigilado:** el sonido del equipo sigue a la salida donde realmente suena (p. ej. si cambias a auriculares) y,
   si el audio se pierde durante el directo, la app avisa y rehace la cadena sola.
 - **Prueba local** de 8 s sin conectar con TikTok.
+- **OBS integrado (opcional):** en «Emitir con» eliges la app u OBS. Con OBS, la app genera la misma escena
+  (pantalla/ventana, cámara en su sitio, micrófono, audio del equipo, formato, FPS, bitrate), pone la clave de TikTok y
+  abre OBS emitiendo. Usa su propia configuración (no toca un OBS que tengas instalado) y borra la clave al cerrarse.
 - **Datos para OBS:** si prefieres emitir con OBS, la app te da el servidor y la clave de TikTok para copiar y pegar
   (y un botón para finalizar la sala al acabar).
 

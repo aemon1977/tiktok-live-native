@@ -28,6 +28,10 @@ done
 # WebKitGTK looks for its helper processes at a compiled-in path, patched to this same-length link.
 # ponytail: one fixed /tmp name, so two different users can't run it at the same time on one machine.
 ln -sfn "$L/webkitgtk-6.0" "@WK_LINK@" 2>/dev/null
+# Integrated OBS: same trick for its compiled data/plugin dirs, plus its Qt plugins.
+ln -sfn "$U/share/obs" "@OBS_DATA_LINK@" 2>/dev/null; ln -sfn "$L/obs-plugins" "@OBS_PLUG_LINK@" 2>/dev/null
+# (no OBS_PLUGINS_PATH: with the patched default path it made OBS load every plugin twice)
+export QT_PLUGIN_PATH="$L/qt6/plugins" TTLN_APPDIR="$HERE"
 # bubblewrap can't expose /tmp/.mount_* libraries to the sandboxed web process; the view only loads tiktok.com.
 export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 
@@ -35,5 +39,6 @@ APP="$U/share/tiktok-live-native"
 case "$1" in
   --selftest) shift; exec "$U/bin/python3" "$APP/smoke.py" "$@" ;;
   --av-test)  shift; exec "$U/bin/python3" "$APP/av_test.py" "$@" ;;
+  --obs-test) shift; exec "$U/bin/python3" "$APP/obs_launcher.py" --selftest ;;
 esac
 exec "$U/bin/python3" "$APP/app.py" "$@"

@@ -7,6 +7,7 @@ gi.require_version("Gtk", "4.0"); gi.require_version("Gdk", "4.0"); gi.require_v
 from gi.repository import Adw, Gdk, GLib, Gtk
 from chat_overlay import chat_view
 import engine as E
+import obs_launcher as OL
 from gi.repository import Gst  # initialised by engine
 import tiktok
 
@@ -91,7 +92,13 @@ class Win:
         b = Gtk.Button(icon_name="folder-open-symbolic", tooltip_text="Abrir carpeta de grabaciones", valign=Gtk.Align.CENTER)
         b.connect("clicked", lambda *_: subprocess.Popen(["xdg-open", str(E.recordings_dir())], env=E.host_env())); sw.add_suffix(b)
         g.add(Adw.ActionRow(title="LIVE", subtitle="Se confirma al pulsar Iniciar LIVE: TikTok crea la sala en ese momento, no antes."))
-        row = Adw.ActionRow(title="Emitir con OBS", subtitle="Servidor y clave para pegar en OBS (crea la sala en TikTok)")
+        has_obs = bool(OL.obs_binary())
+        self.c_engine = self.combo("Emitir con", ["La app", "OBS integrado" if has_obs else "OBS integrado (no disponible)"],
+                                   1 if self.cfg["engine"] == "obs" and has_obs else 0,
+                                   lambda i: self.set("engine", "obs" if i == 1 and has_obs else "app"))
+        self.c_engine.set_subtitle("OBS abre con la misma escena, la clave puesta y emitiendo" if has_obs else
+                                   "OBS va incluido en el AppImage"); g.add(self.c_engine)
+        row = Adw.ActionRow(title="Datos para OBS", subtitle="Servidor y clave para pegar en tu propio OBS (crea la sala en TikTok)")
         self.b_obs = Gtk.Button(label="Datos para OBS", valign=Gtk.Align.CENTER); self.b_obs.connect("clicked", self.on_obs)
         row.add_suffix(self.b_obs); g.add(row)
         left.append(self.settings)
@@ -362,7 +369,7 @@ class Win:
         err = self.validate()
         if err: return self.info("No se puede iniciar", err)
         if not self.refresh_session(): return self.info("Sin sesión TikTok", "Inicia sesión en tiktok.com con Firefox y vuelve a intentarlo.")
-        body = E.summary(self.cfg, self.cams, "EMISIÓN REAL")
+        body = E.summary(self.cfg, self.cams, "EMISIÓN REAL") + ("\nMotor: OBS integrado" if self.cfg["engine"] == "obs" else "")
         self.ask("Vas a iniciar una emisión REAL en TikTok.", body, "INICIAR LIVE", self.go_live, danger=True)
 
     # ------------------------------------------------------------ OBS
@@ -421,8 +428,48 @@ class Win:
     def start_live(self, room):
         if self.mode != "connecting":  # user pressed stop while TikTok was creating the room: close it
             self.log("LIVE_ABORTED_BEFORE_START"); self.room = room; self.finish_room(); return
-        self.room = room; self.live_url = room["url"]; self.retries = 0; self.audio_recoveries = 0; self.stop_engine(self.launch_live)
+        self.room = room; self.live_url = room["url"]; self.retries = 0; self.audio_recoveries = 0
+        self.stop_engine(self.launch_obs if self.cfg["engine"] == "obs" else self.launch_live)
         if not room["user"]: self.log("CHAT=NO_USERNAME")
+
+    # ------------------------------------------------------------ LIVE via integrated OBS
+    def launch_obs(self):
+        """Same scene as the app, written as an OBS profile/collection; OBS starts already streaming."""
+        if self.mode != "connecting": return False
+        err, cam = E.check_devices(self.cfg, self.cams); self.cam_now = cam
+        if err: self.live_failed(err[1]); return False
+        token = ""
+        try: token = json.loads(E.ScreenPortal.TOKEN.read_text()).get("restore_token", "")  # OBS reuses the screen already chosen
+        except Exception: pass
+        cmd = OL.write_config(self.cfg, self.live_url, cam, self.portal.monitor if self.portal else True, token,
+                              E.desktop_monitor() if self.cfg["desktop_audio"] else None)
+        if self.portal: self.portal.close(); self.portal = None; self.portal_ready = False  # OBS opens its own capture
+        self.obs_proc = OL.launch(cmd, self.log); self.set_mode("live", "Abriendo OBS…"); self.overlay.set_text("Emitiendo con OBS")
+        self.overlay.set_visible(True); self.picture.set_paintable(None)
+        started = {"v": False}; t0 = time.time()
+        def watch():
+            if self.obs_proc is None: return False
+            if self.obs_proc.poll() is not None: self.obs_finished(); return False
+            if not started["v"] and OL.streaming_started(t0):
+                started["v"] = True; self.log("STREAMING=STARTED (OBS)"); r = self.room
+                if r and r.get("user"): GLib.timeout_add_seconds(5, lambda: (self.room is r and self.chat.load(r["user"]), False)[1])
+                if r: GLib.timeout_add_seconds(5, lambda: self.poll_viewers(r, lambda: self.room is r and self.mode == "live"))
+                if r and r.get("title"): GLib.timeout_add_seconds(10, lambda: (self.room is r and self.check_title(r), False)[1])
+            v = (self.room or {}).get("viewers")
+            self.status.set_markup(("<span foreground='#e01b24'>●</span> EN DIRECTO CON OBS" if started["v"] else "OBS conectando con TikTok…")
+                                   + (f" · 👁 {v} espectadores" if v is not None else "") + " · DETENER LIVE cierra OBS")
+            return True
+        GLib.timeout_add_seconds(1, watch); return False
+
+    def obs_finished(self):
+        proc, self.obs_proc = getattr(self, "obs_proc", None), None
+        if proc is None: return
+        token = OL.scrub()  # blank the key; keep OBS's rotated portal token so the app doesn't ask again
+        if token: E.ScreenPortal.TOKEN.write_text(json.dumps({"restore_token": token}))
+        self.log("STREAMING=STOPPED (OBS cerrado)"); self.live_url = None; self.finish_room(); self.chat.stop_overlay()
+        self.overlay.set_visible(False); self.set_mode("idle", "LIVE con OBS terminado")
+        if self.cfg["screen"]: self.pick_screen(forget=False)
+        else: self.schedule_rebuild()
 
     def launch_live(self):
         if self.mode not in ("connecting", "live"): return False
@@ -541,6 +588,9 @@ class Win:
 
     def on_stop(self, *_):
         if self.mode not in ("connecting", "live"): return
+        if getattr(self, "obs_proc", None):  # OBS stops the stream and finalizes its recording on SIGINT
+            self.set_mode("stopping", "Cerrando OBS…"); proc = self.obs_proc
+            threading.Thread(target=lambda: (OL.stop(proc), GLib.idle_add(self.obs_finished)), daemon=True).start(); return
         self.set_mode("stopping", "Deteniendo LIVE…")
         def done():
             self.log("STREAMING=STOPPED"); self.live_url = None; self.finish_room(); self.chat.stop_overlay()
@@ -556,6 +606,7 @@ class Win:
             if self.portal: self.portal.close()
             self.win.destroy()
         self.mode = "closing"
+        if getattr(self, "obs_proc", None): OL.stop(self.obs_proc); OL.scrub(); self.obs_proc = None
         if self.eng: self.stop_engine(bye); return True
         bye(); return False
 
