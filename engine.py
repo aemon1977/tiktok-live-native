@@ -5,7 +5,7 @@ Validated rules kept from v17.6-v20:
 - The portal session and the FD from OpenPipeWireRemote stay alive for the whole capture.
 - pipewiresrc negotiates its native format; conversion/rate happen downstream.
 """
-import json, os, re, subprocess, time
+import json, os, re, shlex, shutil, subprocess, time
 from pathlib import Path
 from urllib.parse import urlsplit
 import gi
@@ -13,7 +13,7 @@ gi.require_version("Gio", "2.0"); gi.require_version("Gst", "1.0")
 from gi.repository import Gio, GLib, Gst
 Gst.init(None)
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 HERE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("TTLN_DATA_DIR") or HERE)  # AppRun points this to ~/.local/share/tiktok-live-native
 LOGS = DATA / "logs"; CFG = DATA / "config"
@@ -40,6 +40,44 @@ def recordings_dir():
     """~/Vídeos/TikTok LIVE (XDG Videos dir, localized), visible to the user even when running from the AppImage."""
     videos = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_VIDEOS) or str(Path.home() / "Videos")
     d = Path(videos) / "TikTok LIVE"; d.mkdir(parents=True, exist_ok=True); return d
+
+
+REPO = os.environ.get("TTLN_REPO", "aemon1977/tiktok-live-native")  # owner/repo de las Releases
+
+
+def install_desktop_entry():
+    """Instala (o actualiza) un acceso directo en el cajón de aplicaciones apuntando a este AppImage, con sus iconos.
+    Solo tiene sentido en el AppImage. Devuelve (ok, "instalado"|"actualizado"|"ya"|motivo)."""
+    appdir = os.environ.get("TTLN_APPDIR"); appimage = os.environ.get("APPIMAGE")
+    if not (appdir and appimage): return False, "solo en el AppImage"
+    data = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+    apps = data / "applications"; apps.mkdir(parents=True, exist_ok=True)
+    src_icons = Path(appdir) / "usr/share/icons/hicolor"
+    if src_icons.is_dir():
+        for png in src_icons.rglob("tiktok-live-native.*"):
+            dst = data / "icons/hicolor" / png.relative_to(src_icons)
+            dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(png, dst)
+    entry = ("[Desktop Entry]\nType=Application\nName=TikTok LIVE Native\n"
+             "Comment=Emite a TikTok LIVE desde Linux (pantalla, cámara, micrófono)\n"
+             f"Exec={shlex.quote(appimage)} %U\nIcon=tiktok-live-native\nCategories=AudioVideo;Video;\nTerminal=false\n")
+    dst = apps / "tiktok-live-native.desktop"
+    if dst.exists() and dst.read_text() == entry: return True, "ya"
+    was = dst.exists(); dst.write_text(entry); dst.chmod(0o755)
+    subprocess.run(["update-desktop-database", str(apps)], capture_output=True)  # no pasa nada si no existe
+    return True, "actualizado" if was else "instalado"
+
+
+def check_update():
+    """Mira la última Release en GitHub (sin autenticación). Devuelve (tag, url) si es más nueva que VERSION, o (None, None).
+    Nunca lanza: cualquier fallo de red se trata como 'sin novedades'."""
+    try:
+        import requests
+        d = requests.get(f"https://api.github.com/repos/{REPO}/releases/latest", timeout=10,
+                         headers={"Accept": "application/vnd.github+json"}).json()
+        tag = (d.get("tag_name") or "").lstrip("vV")
+        newer = tuple(int(x) for x in re.findall(r"\d+", tag)) > tuple(int(x) for x in re.findall(r"\d+", VERSION))
+        return (tag, d.get("html_url")) if (tag and newer) else (None, None)
+    except Exception: return None, None
 
 
 def install_appimage_thumbnailer():

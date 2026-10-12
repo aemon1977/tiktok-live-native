@@ -71,10 +71,26 @@ class Win:
         if self.cfg["screen"] and E.ScreenPortal.TOKEN.exists(): self.pick_screen(forget=False)  # restores last choice, no dialog
         else: self.schedule_rebuild()
         self.win.present()
+        if os.environ.get("APPIMAGE"): threading.Thread(target=self.check_update, daemon=True).start()
+
+    def check_update(self):
+        tag, url = E.check_update()
+        if tag: GLib.idle_add(self.update_available, tag, url)
+
+    def update_available(self, tag, url):
+        self.log(f"UPDATE_AVAILABLE {tag}")
+        t = Adw.Toast(title=f"Hay una versión nueva: {tag}", button_label="Descargar", timeout=0)
+        t.connect("button-clicked", lambda *_: subprocess.Popen(["xdg-open", url], env=E.host_env()))
+        self.toasts.add_toast(t)
+
+    def on_install(self, *_):
+        ok, how = E.install_desktop_entry(); self.log(f"DESKTOP_ENTRY={how}")
+        self.toasts.add_toast(Adw.Toast(title="Ya está en el cajón de aplicaciones" if ok else f"No se pudo instalar: {how}"))
 
     # ------------------------------------------------------------ UI
     def build(self):
-        tv = Adw.ToolbarView(); tv.add_top_bar(Adw.HeaderBar()); self.win.set_content(tv)
+        tv = Adw.ToolbarView(); tv.add_top_bar(Adw.HeaderBar())
+        self.toasts = Adw.ToastOverlay(child=tv); self.win.set_content(self.toasts)
         root = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, margin_top=6, margin_bottom=12, margin_start=12, margin_end=12)
         tv.set_content(root)
 
@@ -102,6 +118,10 @@ class Win:
         row = Adw.ActionRow(title="Datos para OBS", subtitle="Servidor y clave para pegar en tu propio OBS (crea la sala en TikTok)")
         self.b_obs = Gtk.Button(label="Datos para OBS", valign=Gtk.Align.CENTER); self.b_obs.connect("clicked", self.on_obs)
         row.add_suffix(self.b_obs); g.add(row)
+        if os.environ.get("APPIMAGE"):
+            row = Adw.ActionRow(title="Instalar en el sistema", subtitle="Añade la app al cajón de aplicaciones")
+            b = Gtk.Button(label="Instalar", valign=Gtk.Align.CENTER); b.connect("clicked", self.on_install)
+            row.add_suffix(b); g.add(row)
         left.append(self.settings)
 
         g = Adw.PreferencesGroup(title="Vídeo"); self.settings.append(g)
@@ -244,8 +264,8 @@ class Win:
     def refresh_session(self):
         s = tiktok.session_status()
         self.log("TIKTOK_SESSION=" + ("FOUND" if s["ok"] else "NOT_FOUND"))
-        self.row_session.set_subtitle(f"● Sesión iniciada (Firefox, caduca {s['expires']})" if s["ok"] else
-                                      "✕ Sin sesión: inicia sesión en tiktok.com con Firefox y pulsa Comprobar")
+        self.row_session.set_subtitle(f"● Sesión iniciada ({s['browser']}, caduca {s['expires']})" if s["ok"] else
+                                      "✕ Sin sesión: inicia sesión en tiktok.com con tu navegador y pulsa Comprobar")
         return s["ok"]
 
     def pick_screen(self, forget):
@@ -369,14 +389,14 @@ class Win:
     def on_live(self, *_):
         err = self.validate()
         if err: return self.info("No se puede iniciar", err)
-        if not self.refresh_session(): return self.info("Sin sesión TikTok", "Inicia sesión en tiktok.com con Firefox y vuelve a intentarlo.")
+        if not self.refresh_session(): return self.info("Sin sesión TikTok", "Inicia sesión en tiktok.com con tu navegador y vuelve a intentarlo.")
         body = E.summary(self.cfg, self.cams, "EMISIÓN REAL") + ("\nMotor: OBS integrado" if self.cfg["engine"] == "obs" else "")
         self.ask("Vas a iniciar una emisión REAL en TikTok.", body, "INICIAR LIVE", self.go_live, danger=True)
 
     # ------------------------------------------------------------ OBS
     def on_obs(self, *_):
         if getattr(self, "obs_room", None): return self.show_obs(self.obs_room)  # same room until finished
-        if not self.refresh_session(): return self.info("Sin sesión TikTok", "Inicia sesión en tiktok.com con Firefox y vuelve a intentarlo.")
+        if not self.refresh_session(): return self.info("Sin sesión TikTok", "Inicia sesión en tiktok.com con tu navegador y vuelve a intentarlo.")
         self.ask("Datos para OBS", "TikTok crea la sala del LIVE en este momento (igual que al pulsar Iniciar LIVE).\n\n"
                  f"Título: {self.cfg['title'] or '(sin título)'}\n\nLa clave es personal: no la compartas ni la enseñes en directo.",
                  "OBTENER DATOS", self.fetch_obs)

@@ -5,7 +5,7 @@
 
 GNOME/Wayland gives regular apps no way to stay above other windows, so ONLY this overlay process runs through
 XWayland (GDK_BACKEND=x11) and asks the window manager for _NET_WM_STATE_ABOVE + _NET_WM_WINDOW_OPACITY.
-Screen capture is untouched (portal + PipeWire). The Firefox session lives in an ephemeral WebKit session.
+Screen capture is untouched (portal + PipeWire). The browser session lives in an ephemeral WebKit session.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -36,7 +36,7 @@ setTimeout(()=>{if(!document.querySelector(q)){post('reload');location.reload()}
 
 
 def chat_view(user, log, overlay=False):
-    """WebView of tiktok.com/@user/live reduced to the viewers+chat column, logged in with the Firefox session."""
+    """WebView of tiktok.com/@user/live reduced to the viewers+chat column, logged in with the detected browser session."""
     ns = WebKit.NetworkSession.new_ephemeral(); cm = ns.get_cookie_manager()
     for h, n, v, pa, se, _ in tiktok.find_session()[1]:
         c = Soup.Cookie.new(n, v, h, pa or "/", -1); c.set_secure(bool(se)); cm.add_cookie(c, None, None, None)

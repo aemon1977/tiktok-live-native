@@ -7,7 +7,7 @@ del equipo, con vista previa, chat superpuesto y grabación. Emite con su propio
 lleva dentro, ya configurado. Sin Wine, sin máquinas virtuales y sin TikTok LIVE Studio.
 
 > Proyecto independiente, **no oficial**, sin relación con TikTok ni ByteDance. Usa la sesión web de tu propia
-> cuenta; tu cuenta debe tener acceso a LIVE.
+> cuenta (Firefox o cualquier navegador basado en Chromium); tu cuenta debe tener acceso a LIVE.
 
 ## Descarga
 
@@ -23,7 +23,7 @@ openSUSE Tumbleweed**. No funciona en Ubuntu 22.04 ni Debian 12 (no tienen WebKi
 
 Requisitos del sistema:
 - Sesión gráfica (Wayland o X11) con **PipeWire** y **xdg-desktop-portal** (lo normal en GNOME y KDE actuales).
-- **Firefox** con la sesión de TikTok iniciada (también Firefox Snap o Flatpak).
+- Un navegador con la sesión de TikTok iniciada: **Firefox** (y derivados: LibreWolf, Floorp, Waterfox, Zen) o cualquiera basado en **Chromium** (Chrome, Chromium, Brave, Edge, Vivaldi, Opera), incluidos Snap y Flatpak.
 
 Diagnóstico rápido en cualquier PC: `./TikTok-LIVE-Native-x86_64.AppImage --selftest` (y `--obs-test` para el OBS integrado)
 
@@ -42,6 +42,8 @@ Diagnóstico rápido en cualquier PC: `./TikTok-LIVE-Native-x86_64.AppImage --se
 - **Audio vigilado:** el sonido del equipo sigue a la salida donde realmente suena (p. ej. si cambias a auriculares) y,
   si el audio se pierde durante el directo, la app avisa y rehace la cadena sola.
 - **Prueba local** de 8 s sin conectar con TikTok.
+- **Instalación en el sistema:** botón «Instalar en el sistema» que añade la app al cajón de aplicaciones (solo AppImage).
+- **Actualizaciones:** al abrir, avisa si hay una versión nueva publicada en GitHub, con botón para descargarla.
 - **OBS integrado (opcional):** en «Emitir con» eliges la app u OBS. Con OBS, la app genera la misma escena
   (pantalla/ventana, cámara en su sitio, micrófono, audio del equipo, formato, FPS, bitrate), pone la clave de TikTok y
   abre OBS emitiendo. Usa su propia configuración (no toca un OBS que tengas instalado) y borra la clave al cerrarse.
@@ -59,11 +61,11 @@ micrófono + audio del equipo ── mezclador          ├─ H.264 (x264) ─�
 ```
 
 Todo el vídeo y audio pasa por GStreamer. La URL RTMP se obtiene con la sesión web de TikTok de tu Firefox,
-en el momento de iniciar el LIVE.
+en el momento de iniciar el LIVE, del navegador donde esté la sesión más reciente.
 
 ## Privacidad y seguridad
 
-- Las cookies se leen de una copia temporal del perfil de Firefox y no se guardan nunca.
+- Las cookies se leen de una copia temporal del perfil del navegador y no se guardan nunca. En navegadores basados en Chromium la cookie cifrada se descifra en memoria con la clave del llavero del sistema (GNOME Keyring / KWallet).
 - La URL y la clave RTMP **no** se escriben en ningún log (se enmascaran como `***`).
 - Datos locales: logs y configuración en `~/.local/share/tiktok-live-native/` (AppImage) o `./logs`, `./config`
   (código fuente).
@@ -72,7 +74,7 @@ en el momento de iniciar el LIVE.
 ## Ejecutar desde el código (Debian 13 / Ubuntu 24.04)
 
 ```bash
-sudo apt install python3-gi python3-requests gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-webkit-6.0 gir1.2-soup-3.0 \
+sudo apt install python3-gi python3-requests python3-cryptography gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-webkit-6.0 gir1.2-soup-3.0 \
   gir1.2-gst-plugins-base-1.0 gstreamer1.0-plugins-{base,good,bad,ugly} gstreamer1.0-libav \
   gstreamer1.0-pipewire gstreamer1.0-pulseaudio pulseaudio-utils
 ./run.sh          # la app
