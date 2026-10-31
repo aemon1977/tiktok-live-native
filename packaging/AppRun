@@ -10,6 +10,9 @@ export TTLN_DATA_DIR="${TTLN_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/tikt
 export LD_LIBRARY_PATH="$L${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export PATH="$U/bin:$PATH"
 export PYTHONHOME="$U" PYTHONPATH="$U/lib/python3/dist-packages" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+# Work around OpenSSL legacy-provider initialization failures in bundled python3-cryptography
+# when decrypting Chromium cookies on Fedora; AES-CBC uses the default provider.
+export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1
 export GI_TYPELIB_PATH="$L/girepository-1.0"
 export GST_PLUGIN_SYSTEM_PATH_1_0="$L/gstreamer-1.0" GST_PLUGIN_PATH_1_0="" \
        GST_PLUGIN_SCANNER_1_0="$L/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" GST_REGISTRY_1_0="$CACHE/gst-registry.bin"
